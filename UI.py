@@ -2,56 +2,31 @@ import streamlit as st
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
 import numpy as np
-import requests
 import cv2
 from PIL import Image
-import io
-import os
 
+# Load the trained model
 @st.cache_resource(show_spinner=True)
-def download_model(model_name):
-    url = f'https://github.com/Jacky0729/AgeDetection/raw/main/{model_name}.keras'
-    response = requests.get(url)
-
-    if response.status_code != 200:
-        st.error(f"Failed to download {model_name}.keras. Status code: {response.status_code}")
-        return None
-
-    model_path = f'{model_name}.keras'
-    with open(model_path, 'wb') as file:
-        file.write(response.content)
-
-    if not os.path.exists(model_path):
-        st.error(f"File not found after download: {model_path}")
-        return None
-
-    return model_path
-
-
-def load_and_check_model(model_path):
-    if model_path is None:
-        st.error(f"Model file not available: {model_path}")
-        return None
+def load_trained_model():
     try:
-        model = load_model(model_path)
+        model = load_model('multi_output_model.keras')  # Ensure this path matches the saved model's location
         return model
-    except ValueError as e:
-        st.error(f"Error loading model from {model_path}: {e}")
+    except Exception as e:
+        st.error(f"Error loading model: {e}")
         return None
 
+model = load_trained_model()
 
-ensemble_model_path = download_model('multi_output_model')
-
-ensemble_model = load_and_check_model(ensemble_model_path)
-
+# Preprocess the image to the required format
 def preprocess_image(image):
-    target_size = (179, 179)  # Update to match the model's expected input size
+    target_size = (200, 200)  # Update this if your model expects a different input size
     img = image.resize(target_size)
     img_array = img_to_array(img)
-    img_array = np.expand_dims(img_array, axis=0)
-    img_array /= 255.0
+    img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
+    img_array /= 255.0  # Normalize to [0, 1]
     return img_array
 
+# Detect faces using OpenCV
 def detect_face(image):
     img_np = np.array(image)
     gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
@@ -59,8 +34,9 @@ def detect_face(image):
     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
     return faces
 
-st.title("Age, Gender, and Race Classification Model")
+st.title("Age, Gender, and Race Classification")
 
+# Upload an image
 uploaded_image = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
 
 if uploaded_image is not None:
@@ -74,26 +50,27 @@ if uploaded_image is not None:
     else:
         for (x, y, w, h) in faces:
             face_img = image.crop((x, y, x+w, y+h))
-            img_array = preprocess_image(face_img)
             st.image(face_img, caption="Detected Face", use_column_width=True)
 
-            if ensemble_model:
-                # Predict age, gender, and race
-                predictions = ensemble_model.predict(img_array)
+            img_array = preprocess_image(face_img)
 
+            if model:
+                # Predict age, gender, and race
+                predictions = model.predict(img_array)
 
                 age_prediction, gender_prediction, race_prediction = predictions
 
+                # Define the class mappings for the outputs
                 age_groups = ['0-8', '9-18', '19-39', '40-59', '60+']
                 gender_classes = ['Male', 'Female']
                 race_classes = ['White', 'Black', 'Asian', 'Indian']
 
                 predicted_age = age_groups[np.argmax(age_prediction)]
-                predicted_gender = gender_classes[round(gender_prediction[0])]
+                predicted_gender = gender_classes[np.argmax(gender_prediction)]
                 predicted_race = race_classes[np.argmax(race_prediction)]
 
                 st.write(f"Predicted Age Group: {predicted_age}")
                 st.write(f"Predicted Gender: {predicted_gender}")
                 st.write(f"Predicted Race: {predicted_race}")
             else:
-                st.error("Ensemble model could not be loaded. Please check the model file.")
+                st.error("Model could not be loaded. Please check the file.")
