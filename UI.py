@@ -2,24 +2,50 @@ import streamlit as st
 from tensorflow.keras.models import load_model
 from tensorflow.keras.preprocessing.image import img_to_array
 import numpy as np
+import requests
+import os
 import cv2
 from PIL import Image
 
-# Load the trained model
+# Function to download the model from GitHub
 @st.cache_resource(show_spinner=True)
-def load_trained_model():
-    try:
-        model = load_model('multi_output_model.keras')  # Ensure this path matches the saved model's location
-        return model
-    except Exception as e:
-        st.error(f"Error loading model: {e}")
+def download_model_from_github(model_name):
+    url = f'https://github.com/Jacky0729/AgeDetection/raw/main/{model_name}.keras'  # Adjust this URL if needed
+    response = requests.get(url)
+
+    if response.status_code != 200:
+        st.error(f"Failed to download {model_name}.keras. Status code: {response.status_code}")
         return None
 
-model = load_trained_model()
+    model_path = f'{model_name}.keras'
+    with open(model_path, 'wb') as file:
+        file.write(response.content)
 
-# Preprocess the image to the required format
+    if not os.path.exists(model_path):
+        st.error(f"File not found after download: {model_path}")
+        return None
+
+    return model_path
+
+# Load the model after downloading
+def load_trained_model_from_github(model_name):
+    model_path = download_model_from_github(model_name)
+    if model_path is not None:
+        try:
+            model = load_model(model_path)
+            return model
+        except Exception as e:
+            st.error(f"Error loading model from {model_path}: {e}")
+            return None
+    else:
+        return None
+
+# Load model from GitHub
+model = load_trained_model_from_github('multi_output_model')
+
+# Preprocess the image
 def preprocess_image(image):
-    target_size = (200, 200)  # Update this if your model expects a different input size
+    target_size = (200, 200)  # Match the model input size
     img = image.resize(target_size)
     img_array = img_to_array(img)
     img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
@@ -34,6 +60,7 @@ def detect_face(image):
     faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
     return faces
 
+# Streamlit app title
 st.title("Age, Gender, and Race Classification")
 
 # Upload an image
